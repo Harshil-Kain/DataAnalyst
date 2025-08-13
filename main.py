@@ -188,7 +188,10 @@ async def ask_question(
         raise HTTPException(status_code=500, detail=output)
     return {"result": output}
 
-
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+    
 # -----------if you want to run this script directly, uncomment the following lines-----------
 """
 if __name__ == "__main__":
