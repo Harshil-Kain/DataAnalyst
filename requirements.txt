@@ -4,6 +4,7 @@ uvicorn
 pydantic
 python-dotenv
 openai
+python-multipart
 
 # Data analysis + scraping (commonly used by your agent)
 pandas
@@ -17,3 +18,4 @@ duckdb
 plotly
 statsmodels
 pyarrow
+
