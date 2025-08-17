@@ -1,3 +1,8 @@
+'''
+This code is the generalized version of the project Virtual-TA
+This is the final version of the code that can be used to generate code for any question related to data analysis.
+'''
+
 import os
 import re
 import time
@@ -22,10 +27,6 @@ RETRIES = 5
 MODEL = "gpt-4.1-nano"
 
 app = FastAPI()
-
-@app.get("/health")
-def health_check():
-    return {"status": "ok", "message": "API is running"}
 
 class QuestionRequest(BaseModel):
     question: str
@@ -53,6 +54,7 @@ def ask_llm_to_generate_code(question):
                     "12. The entire code must be executable in a single run without any user input.\n"
                     "13. The entire script (including data download, processing, and output) must finish in under 3 minutes. Optimize query and code for speed. If the dataset is too large, sample or aggregate as needed to stay within the  time limit.\n"
                     "14. Suppress all warnings (e.g., using warnings.filterwarnings('ignore')) so that only the required output is printed.\n"
+                    "15. Give only the value of answers to the question what are asked for and nothing else"
                     "Do not include ```python markdown or explanations — only the executable Python code."
 
                     
@@ -188,10 +190,7 @@ async def ask_question(
         raise HTTPException(status_code=500, detail=output)
     return {"result": output}
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-    
+
 # -----------if you want to run this script directly, uncomment the following lines-----------
 """
 if __name__ == "__main__":
@@ -199,4 +198,10 @@ if __name__ == "__main__":
             <add your question here>
             '''
     output = generate_and_execute(question)
+"""
+
+"""
+working curl request
+
+curl -X POST "http://127.0.0.1:8000/ask" -H "Content-Type: multipart/form-data" -F "questions_file=@questions.txt"
 """
