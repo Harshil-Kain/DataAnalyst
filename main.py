@@ -204,4 +204,7 @@ if __name__ == "__main__":
 working curl request
 
 curl -X POST "http://127.0.0.1:8000/ask" -H "Content-Type: multipart/form-data" -F "questions_file=@questions.txt"
+
+curl -X POST "https://dataanalyst-3dlf.onrender.com/ask" -H "Content-Type: multipart/form-data" -F "questions_file=@questions.txt"
+https://dataanalyst-3dlf.onrender.com
 """
