@@ -1,6 +1,19 @@
+# Core API dependencies
 fastapi
 uvicorn
-python-dotenv
 pydantic
+python-dotenv
 openai
-python-multipart
+
+# Data analysis + scraping (commonly used by your agent)
+pandas
+numpy
+matplotlib
+seaborn
+scikit-learn
+requests
+beautifulsoup4
+duckdb
+plotly
+statsmodels
+pyarrow
