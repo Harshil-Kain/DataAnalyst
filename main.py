@@ -78,69 +78,69 @@ def ask_llm_to_generate_code(question):
     return response.choices[0].message.content.strip()
 
 RUNTIME_PRELUDE = r"""
-        import os, sys, time, signal, resource
+import os, sys, time, signal, resource
 
-        # --- Headless plotting ---
+# --- Headless plotting ---
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+except Exception:
+    pass
+
+# --- Time + memory watchdog ---
+START_TIME = time.time()
+MAX_SECS = int(os.getenv("MAX_RUNTIME", "150"))   # configurable
+MAX_MB   = int(os.getenv("MAX_MEMORY_MB", "450")) # kill before Render OOM
+
+def _time_mem_check():
+    if time.time() - START_TIME > MAX_SECS:
+        print('{"error":"time_limit_exceeded"}'); sys.exit(0)
+    usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    if usage > MAX_MB:
+        print('{"error":"memory_limit_exceeded"}'); sys.exit(0)
+
+# --- Safe DuckDB connector ---
+def _duckdb_connect():
+    import duckdb
+    con = duckdb.connect()
+    con.execute("SET threads TO 4")
+    con.execute("SET enable_progress_bar=false")
+    try:
+        con.execute("INSTALL httpfs; LOAD httpfs;")
+        con.execute("INSTALL parquet; LOAD parquet;")
+    except Exception:
+        pass
+    con.execute("SET hive_partitioning=true")
+    con.execute("SET s3_region='ap-south-1'")
+    con.execute("SET s3_use_ssl=true")
+    con.execute("SET s3_access_key_id=''")
+    con.execute("SET s3_secret_access_key=''")
+    con.execute("SET s3_external_signing=false")
+    return con
+
+# --- Scatter safety patch ---
+def _safe_scatter(plt):
+    _orig = plt.scatter
+    def _wrap(x, y, **kw):
+        import numpy as np
         try:
-            import matplotlib
-            matplotlib.use("Agg")
-        except Exception:
-            pass
+            import pandas as pd
+            if hasattr(x, "dropna"): x = x.dropna()
+            if hasattr(y, "dropna"): y = y.dropna()
+        except Exception: pass
+        x = np.asarray(x); y = np.asarray(y)
+        n = min(len(x), len(y))
+        if n == 0: raise ValueError("Not enough data to plot")
+        return _orig(x[:n], y[:n], **kw)
+    plt.scatter = _wrap
+    return plt
 
-        # --- Time + memory watchdog ---
-        START_TIME = time.time()
-        MAX_SECS = int(os.getenv("MAX_RUNTIME", "150"))   # configurable
-        MAX_MB   = int(os.getenv("MAX_MEMORY_MB", "450")) # kill before Render OOM
+# --- Always check after heavy work ---
+def _checkpoint():
+    _time_mem_check()
 
-        def _time_mem_check():
-            if time.time() - START_TIME > MAX_SECS:
-                print('{"error":"time_limit_exceeded"}'); sys.exit(0)
-            usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
-            if usage > MAX_MB:
-                print('{"error":"memory_limit_exceeded"}'); sys.exit(0)
-
-        # --- Safe DuckDB connector ---
-        def _duckdb_connect():
-            import duckdb
-            con = duckdb.connect()
-            con.execute("SET threads TO 4")
-            con.execute("SET enable_progress_bar=false")
-            try:
-                con.execute("INSTALL httpfs; LOAD httpfs;")
-                con.execute("INSTALL parquet; LOAD parquet;")
-            except Exception:
-                pass
-            con.execute("SET hive_partitioning=true")
-            con.execute("SET s3_region='ap-south-1'")
-            con.execute("SET s3_use_ssl=true")
-            con.execute("SET s3_access_key_id=''")
-            con.execute("SET s3_secret_access_key=''")
-            con.execute("SET s3_external_signing=false")
-            return con
-
-        # --- Scatter safety patch ---
-        def _safe_scatter(plt):
-            _orig = plt.scatter
-            def _wrap(x, y, **kw):
-                import numpy as np
-                try:
-                    import pandas as pd
-                    if hasattr(x, "dropna"): x = x.dropna()
-                    if hasattr(y, "dropna"): y = y.dropna()
-                except Exception: pass
-                x = np.asarray(x); y = np.asarray(y)
-                n = min(len(x), len(y))
-                if n == 0: raise ValueError("Not enough data to plot")
-                return _orig(x[:n], y[:n], **kw)
-            plt.scatter = _wrap
-            return plt
-
-        # --- Always check after heavy work ---
-        def _checkpoint():
-            _time_mem_check()
-
-        import warnings
-        warnings.filterwarnings("ignore")
+import warnings
+warnings.filterwarnings("ignore")
 """
 
 def write_code_to_file(code):
