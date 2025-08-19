@@ -1,8 +1,3 @@
-'''
-This code is the generalized version of the project Virtual-TA
-This is the final version of the code that can be used to generate code for any question related to data analysis.
-'''
-
 import os
 import re
 import time
@@ -251,14 +246,10 @@ async def ask_question(
         question = f.read().strip()
     if not question:
         raise HTTPException(status_code=400, detail="questions.txt is empty.")
-
-    # Save image if provided
     if image:
         image_path = image.filename
         with open(image_path, "wb") as f:
             f.write(await image.read())
-
-    # Save dataset if provided
     if dataset:
         dataset_path = dataset.filename
         with open(dataset_path, "wb") as f:
@@ -279,10 +270,6 @@ if __name__ == "__main__":
     output = generate_and_execute(question)
 """
 
-"""
-working curl request
-
-curl -X POST "http://127.0.0.1:8000/ask" -H "Content-Type: multipart/form-data" -F "questions_file=@questions.txt"
-
 curl -X POST "https://dataanalyst-3dlf.onrender.com/ask" -H "Content-Type: multipart/form-data" -F "questions_file=@questions.txt"
+
 """
