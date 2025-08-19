@@ -44,20 +44,32 @@ def ask_llm_to_generate_code(question):
                     "2. Perform all needed analysis, cleaning, or transformation.\n"
                     "3. Print or return final answers in clear format (e.g., print(), JSON, etc).\n"
                     "4. If visualization is needed, return a Base64-encoded PNG image under 100 KB.\n"
-                    "5. You must ensure Pandas code avoids SettingWithCopyWarning by either using .copy() when creating new DataFrames or .loc for assignment. \n"
+                    "5. You must ensure Pandas code avoids SettingWithCopyWarning by either using .copy() when creating new DataFrames or .loc for assignment.\n"
                     "6. Use the latest version of scikit-learn.\n"
-                    "7. If any libraries are missing, install them using pip.\n"
+                    "7. If any libraries are missing, install them using pip at runtime.\n"
                     "8. Do not use any external files or resources, everything must be self-contained.\n"
                     "9. Do not use any imports that are not necessary for the task.\n"
                     "10. Only include the images or their links in the output if they are required by the task.\n"
                     "11. If the task involves large remote datasets (e.g., Parquet files on S3), use DuckDB to query the data directly without downloading the entire dataset. Install and load DuckDB extensions (httpfs, parquet) as needed. Use S3 anonymous access unless otherwise specified. Return answers in the requested JSON format, and encode plots as base64 data URIs under 100,000 characters if required.\n"
                     "12. The entire code must be executable in a single run without any user input.\n"
-                    "13. The entire script (including data download, processing, and output) must finish in under 3 minutes. Optimize query and code for speed. If the dataset is too large, sample or aggregate as needed to stay within the  time limit.\n"
+                    "13. *IMPORTANT* The entire script (including data download, processing, and output) must finish in under 3 minutes. Optimize query and code for speed. If the dataset is too large, sample or aggregate as needed to stay within the time limit.\n"
                     "14. Suppress all warnings (e.g., using warnings.filterwarnings('ignore')) so that only the required output is printed.\n"
-                    "15. Give only the value of answers to the question what are asked for and nothing else"
-                    "Do not include ```python markdown or explanations — only the executable Python code."
-
-                    
+                    "15. Give only the value of answers to the question what are asked for and nothing else.\n"
+                    "16. Always assume headless environment: use matplotlib (Agg) backend, save plots to base64 PNG.\n"
+                    "17. Before heavy queries or loops, call `_checkpoint()` to respect runtime/memory limits.\n"
+                    "18. For tabular data:\n"
+                    "       - Small CSV/JSON: use pandas.read_csv/read_json directly.\n"
+                    "       - Large/remote (S3, GCS, parquet): use con = _duckdb_connect().\n"
+                    "           - Always filter partitions (year, region, etc.) instead of scanning all.\n"
+                    "           - Select only needed columns; avoid SELECT *.\n"
+                    "           - Use LIMIT or sample() if data is too large.\n"
+                    "19. Always sanitize regex expressions (use raw strings like r'\\$' instead of '\\$').\n"
+                    "20. Always validate DataFrame column sizes before plotting (x and y must be equal length).\n"
+                    "21. If data fetching fails (404, timeout, etc.), handle gracefully with a fallback message instead of crashing.\n"
+                    "22. Use try/except around web scraping, DuckDB queries, and plotting to avoid runtime errors.\n"
+                    "23. When parsing HTML (pandas.read_html), ensure 'lxml' is installed and importable; if not, install it.\n"
+                    "24. Do not produce duplicate outputs; only print or return the final result.\n"
+                    "25. Do not include ```python markdown or explanations — only the executable Python code."
                 ),
             },
             {"role": "user", "content": question},
@@ -65,10 +77,77 @@ def ask_llm_to_generate_code(question):
     )
     return response.choices[0].message.content.strip()
 
+RUNTIME_PRELUDE = r"""
+        import os, sys, time, signal, resource
+
+        # --- Headless plotting ---
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+        except Exception:
+            pass
+
+        # --- Time + memory watchdog ---
+        START_TIME = time.time()
+        MAX_SECS = int(os.getenv("MAX_RUNTIME", "150"))   # configurable
+        MAX_MB   = int(os.getenv("MAX_MEMORY_MB", "450")) # kill before Render OOM
+
+        def _time_mem_check():
+            if time.time() - START_TIME > MAX_SECS:
+                print('{"error":"time_limit_exceeded"}'); sys.exit(0)
+            usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+            if usage > MAX_MB:
+                print('{"error":"memory_limit_exceeded"}'); sys.exit(0)
+
+        # --- Safe DuckDB connector ---
+        def _duckdb_connect():
+            import duckdb
+            con = duckdb.connect()
+            con.execute("SET threads TO 4")
+            con.execute("SET enable_progress_bar=false")
+            try:
+                con.execute("INSTALL httpfs; LOAD httpfs;")
+                con.execute("INSTALL parquet; LOAD parquet;")
+            except Exception:
+                pass
+            con.execute("SET hive_partitioning=true")
+            con.execute("SET s3_region='ap-south-1'")
+            con.execute("SET s3_use_ssl=true")
+            con.execute("SET s3_access_key_id=''")
+            con.execute("SET s3_secret_access_key=''")
+            con.execute("SET s3_external_signing=false")
+            return con
+
+        # --- Scatter safety patch ---
+        def _safe_scatter(plt):
+            _orig = plt.scatter
+            def _wrap(x, y, **kw):
+                import numpy as np
+                try:
+                    import pandas as pd
+                    if hasattr(x, "dropna"): x = x.dropna()
+                    if hasattr(y, "dropna"): y = y.dropna()
+                except Exception: pass
+                x = np.asarray(x); y = np.asarray(y)
+                n = min(len(x), len(y))
+                if n == 0: raise ValueError("Not enough data to plot")
+                return _orig(x[:n], y[:n], **kw)
+            plt.scatter = _wrap
+            return plt
+
+        # --- Always check after heavy work ---
+        def _checkpoint():
+            _time_mem_check()
+
+        import warnings
+        warnings.filterwarnings("ignore")
+"""
+
 def write_code_to_file(code):
     with open("generated_code.py", "w", encoding="utf-8") as f:
-        f.write("import warnings\nwarnings.filterwarnings('ignore')\n")
+        f.write(RUNTIME_PRELUDE + "\n\n")
         f.write(code)
+
 
 def extract_required_libraries(code):
     pattern = re.compile(r'^\s*(?:from|import)\s+([a-zA-Z_][\w]*)', re.MULTILINE)
@@ -206,5 +285,4 @@ working curl request
 curl -X POST "http://127.0.0.1:8000/ask" -H "Content-Type: multipart/form-data" -F "questions_file=@questions.txt"
 
 curl -X POST "https://dataanalyst-3dlf.onrender.com/ask" -H "Content-Type: multipart/form-data" -F "questions_file=@questions.txt"
-https://dataanalyst-3dlf.onrender.com
 """
