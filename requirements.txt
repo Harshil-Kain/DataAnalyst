@@ -18,4 +18,7 @@ duckdb
 plotly
 statsmodels
 pyarrow
+lxml
+html5lib
+
 
