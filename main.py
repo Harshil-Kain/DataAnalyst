@@ -212,7 +212,7 @@ def run_generated_code():
             ["python", "generated_code.py"], 
             stderr=subprocess.STDOUT, 
             text=True, 
-            timeout = 180
+            timeout = 210
             )
         return True, result.strip()
     except subprocess.TimeoutExpired:
